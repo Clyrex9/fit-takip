@@ -13,6 +13,8 @@ export default function ProfilPage() {
   const [weightHistory, setWeightHistory] = useState([]);
   const [doneDays, setDoneDays] = useState({});
   const [loading, setLoading] = useState(true);
+  const [photo, setPhoto] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (u) => {
@@ -26,6 +28,7 @@ export default function ProfilPage() {
           setKilo(data.kilo || "");
           setWeightHistory(data.weightHistory || []);
           setDoneDays(data.doneDays || {});
+          setPhoto(data.photoURL || u.photoURL || "");
         }
         setLoading(false);
       }
@@ -66,6 +69,26 @@ export default function ProfilPage() {
     });
   }
 
+  async function handlePhotoChange(e) {
+    const file = e.target.files[0];
+    if (!file || !user) return;
+    setUploading(true);
+    // Firebase Storage'a yükle
+    const storageUrl = `https://api.imgbb.com/1/upload?key=2f4c5e2b2e4e8b7bc3f1d1e2a3c4b5d6`; // örnek imgbb, kendi key'inle değiştir
+    const formData = new FormData();
+    formData.append('image', file);
+    const res = await fetch(storageUrl, { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.success) {
+      setPhoto(data.data.url);
+      await updateDoc(doc(db, "profiles", user.uid), { photoURL: data.data.url });
+      alert("Profil fotoğrafı güncellendi!");
+    } else {
+      alert("Fotoğraf yüklenemedi!");
+    }
+    setUploading(false);
+  }
+
   if (!user || loading) return null;
 
   return (
@@ -73,7 +96,9 @@ export default function ProfilPage() {
       <Navbar />
       <div className="container">
         <h2>Profil</h2>
-        <img src={user.photoURL} alt="Profil" style={{ borderRadius: "50%", width: 100, height: 100, marginBottom: 16 }} />
+        <img src={photo || user.photoURL} alt="Profil" style={{ borderRadius: "50%", width: 100, height: 100, marginBottom: 16 }} />
+        <input type="file" accept="image/*" onChange={handlePhotoChange} disabled={uploading} style={{ marginBottom: 12 }} />
+        {uploading && <div>Yükleniyor...</div>}
         <div style={{ fontSize: 18, marginBottom: 8 }}>Ad: {user.displayName}</div>
         <div style={{ fontSize: 16, marginBottom: 8 }}>Email: {user.email}</div>
         <CalendarProgress doneDays={doneDays} />

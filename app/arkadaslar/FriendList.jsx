@@ -8,7 +8,8 @@ export default function FriendList() {
   const [friends, setFriends] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
-  const [username, setUsername] = useState("");
+  const [friendInput, setFriendInput] = useState("");
+  const [searchType, setSearchType] = useState("email"); // "email" veya "displayName"
   const [friendProgress, setFriendProgress] = useState({});
   const [error, setError] = useState("");
   const [showProfile, setShowProfile] = useState(null);
@@ -19,23 +20,11 @@ export default function FriendList() {
       if (u) {
         const ref = doc(db, "friends", u.uid);
         const snap = await getDoc(ref);
-        // Arkadaş listesi username mi, email mi?
-        let friendUsernames = [];
+        let friendEmails = [];
         if (snap.exists()) {
-          const list = snap.data().list || [];
-          // Eğer email ise, username'e çevir
-          for (const item of list) {
-            if (item.includes("@")) {
-              // email -> username
-              const q = query(collection(db, "profiles"), where("email", "==", item));
-              const qs = await getDocs(q);
-              if (!qs.empty) friendUsernames.push(qs.docs[0].data().displayName);
-            } else {
-              friendUsernames.push(item);
-            }
-          }
+          friendEmails = snap.data().list || [];
         }
-        setFriends(friendUsernames);
+        setFriends(friendEmails);
         // Gelen istekleri al
         const reqRef = doc(db, "friendRequests", u.uid);
         const reqSnap = await getDoc(reqRef);
@@ -51,40 +40,44 @@ export default function FriendList() {
 
   async function sendFriendRequest() {
     setError("");
-    if (!username || !user) return;
-    // Kendi username'ine istek gönderme
-    const myProfile = await getDoc(doc(db, "profiles", user.uid));
-    if (myProfile.exists() && myProfile.data().displayName === username) {
-      setError("Kendi kullanıcı adına istek gönderemezsin."); return;
+    if (!friendInput || !user) return;
+    if (friendInput === user.email || friendInput === user.displayName) {
+      setError("Kendi bilgini ekleyemezsin."); return;
     }
-    // Kullanıcı var mı kontrolü
-    const q = query(collection(db, "profiles"), where("displayName", "==", username));
+    // Kullanıcı var mı kontrolü (email veya kullanıcı adı ile)
+    let q;
+    if (searchType === "email" || friendInput.includes("@")) {
+      q = query(collection(db, "profiles"), where("email", "==", friendInput));
+    } else {
+      q = query(collection(db, "profiles"), where("displayName", "==", friendInput));
+    }
     const qs = await getDocs(q);
     if (qs.empty) { setError("Kullanıcı bulunamadı."); return; }
     const targetUid = qs.docs[0].id;
+    const targetEmail = qs.docs[0].data().email;
     // Zaten arkadaş mı?
     const ref = doc(db, "friends", user.uid);
     const snap = await getDoc(ref);
     let newList = [];
     if (snap.exists()) {
       newList = snap.data().list || [];
-      if (newList.includes(username)) { setError("Zaten arkadaşsınız."); return; }
+      if (newList.includes(targetEmail)) { setError("Zaten arkadaşsınız."); return; }
     }
     // Zaten istek gönderilmiş mi?
     const pendRef = doc(db, "pendingRequests", user.uid);
     const pendSnap = await getDoc(pendRef);
     let pendList = pendSnap.exists() ? pendSnap.data().list || [] : [];
-    if (pendList.includes(username)) { setError("Zaten istek gönderdin."); return; }
-    pendList.push(username);
+    if (pendList.includes(targetEmail)) { setError("Zaten istek gönderdin."); return; }
+    pendList.push(targetEmail);
     await setDoc(pendRef, { list: pendList });
     // Hedefin friendRequests'ine ekle
     const reqRef = doc(db, "friendRequests", targetUid);
     const reqSnap = await getDoc(reqRef);
     let reqList = reqSnap.exists() ? reqSnap.data().list || [] : [];
-    reqList.push(myProfile.data().displayName);
+    reqList.push(user.email);
     await setDoc(reqRef, { list: reqList });
     setPendingRequests(pendList);
-    setUsername("");
+    setFriendInput("");
   }
 
   async function acceptFriendRequest(requester) {
@@ -96,20 +89,20 @@ export default function FriendList() {
     if (!myList.includes(requester)) myList.push(requester);
     await setDoc(myRef, { list: myList });
     // Karşı tarafın friends listesine ekle
-    const q = query(collection(db, "profiles"), where("displayName", "==", requester));
+    const q = query(collection(db, "profiles"), where("email", "==", requester));
     const qs = await getDocs(q);
     if (!qs.empty) {
       const targetUid = qs.docs[0].id;
       const frRef = doc(db, "friends", targetUid);
       const frSnap = await getDoc(frRef);
       let frList = frSnap.exists() ? frSnap.data().list || [] : [];
-      if (!frList.includes(user.displayName)) frList.push(user.displayName);
+      if (!frList.includes(user.email)) frList.push(user.email);
       await setDoc(frRef, { list: frList });
       // Karşı tarafın pendingRequests listesinden çıkar
       const pendRef = doc(db, "pendingRequests", targetUid);
       const pendSnap = await getDoc(pendRef);
       let pendList = pendSnap.exists() ? pendSnap.data().list || [] : [];
-      pendList = pendList.filter(u => u !== user.displayName);
+      pendList = pendList.filter(u => u !== user.email);
       await setDoc(pendRef, { list: pendList });
     }
     // Kendi friendRequests listesinden çıkar
@@ -122,13 +115,13 @@ export default function FriendList() {
     setFriends(myList);
   }
 
-  async function fetchFriendProgress(username) {
-    // Arkadaşın profilini getir (email asla gösterilmez!)
-    const q = query(collection(db, "profiles"), where("displayName", "==", username));
+  async function fetchFriendProgress(email) {
+    // Arkadaşın profilini getir (email ile)
+    const q = query(collection(db, "profiles"), where("email", "==", email));
     const qs = await getDocs(q);
     let profile = null;
     if (!qs.empty) profile = qs.docs[0].data();
-    setFriendProgress({ ...friendProgress, [username]: { profile } });
+    setFriendProgress({ ...friendProgress, [email]: { profile } });
   }
 
   return (
@@ -136,9 +129,9 @@ export default function FriendList() {
       <h3>Arkadaş Ekle</h3>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
-          placeholder="Arkadaş kullanıcı adı"
-          value={username}
-          onChange={e => setUsername(e.target.value)}
+          placeholder="Kullanıcı adı veya email"
+          value={friendInput}
+          onChange={e => setFriendInput(e.target.value)}
         />
         <button onClick={sendFriendRequest}>İstek Gönder</button>
       </div>
@@ -167,10 +160,10 @@ export default function FriendList() {
       <h4>Arkadaşlarım</h4>
       <ul style={{ padding: 0, margin: 0 }}>
         {friends.length === 0 && <li style={{ color: "#aaa" }}>Henüz arkadaşın yok.</li>}
-        {friends.map(username => (
-          <li key={username} style={{ marginBottom: 8 }}>
-            <span>{username}</span>
-            <button style={{ marginLeft: 8 }} onClick={async () => { await fetchFriendProgress(username); setShowProfile(username); }}>Profili Gör</button>
+        {friends.map(email => (
+          <li key={email} style={{ marginBottom: 8 }}>
+            <span>{email}</span>
+            <button style={{ marginLeft: 8 }} onClick={async () => { await fetchFriendProgress(email); setShowProfile(email); }}>Profili Gör</button>
           </li>
         ))}
       </ul>

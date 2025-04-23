@@ -15,6 +15,7 @@ export default function ProfilPage() {
   const [loading, setLoading] = useState(true);
   const [photo, setPhoto] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (u) => {
@@ -29,6 +30,7 @@ export default function ProfilPage() {
           setWeightHistory(data.weightHistory || []);
           setDoneDays(data.doneDays || {});
           setPhoto(data.photoURL || u.photoURL || "");
+          setDisplayName(data.displayName || u.displayName || "");
         }
         setLoading(false);
       }
@@ -42,10 +44,14 @@ export default function ProfilPage() {
       boy,
       kilo,
       weightHistory,
-      displayName: user.displayName,
-      photoURL: user.photoURL,
+      displayName: displayName,
+      photoURL: photo || user.photoURL,
       email: user.email,
     });
+    // Kullanıcı adı Firebase Auth'ta da güncellensin
+    if (user.displayName !== displayName) {
+      await user.updateProfile({ displayName });
+    }
     alert("Profil kaydedildi!");
   }
 
@@ -99,7 +105,14 @@ export default function ProfilPage() {
         <img src={photo || user.photoURL} alt="Profil" style={{ borderRadius: "50%", width: 100, height: 100, marginBottom: 16 }} />
         <input type="file" accept="image/*" onChange={handlePhotoChange} disabled={uploading} style={{ marginBottom: 12 }} />
         {uploading && <div>Yükleniyor...</div>}
-        <div style={{ fontSize: 18, marginBottom: 8 }}>Ad: {user.displayName}</div>
+        <input
+          type="text"
+          placeholder="Kullanıcı adı"
+          value={displayName}
+          onChange={e => setDisplayName(e.target.value)}
+          style={{ width: "100%", marginBottom: 8, fontSize: 16 }}
+        />
+        <div style={{ fontSize: 18, marginBottom: 8 }}>Ad: {displayName}</div>
         <div style={{ fontSize: 16, marginBottom: 8 }}>Email: {user.email}</div>
         <CalendarProgress doneDays={doneDays} />
         <form onSubmit={e => { e.preventDefault(); saveProfile(); }} style={{ width: "100%", marginTop: 12 }}>

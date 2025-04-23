@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { db, auth } from "../lib/firebase";
 import { doc, getDoc, collection, getDocs, setDoc } from "firebase/firestore";
+import { useRouter } from "next/navigation";
 
 export default function DashboardSummary() {
   const [user, setUser] = useState(null);
@@ -15,6 +16,7 @@ export default function DashboardSummary() {
   const [dietDone, setDietDone] = useState(false);
   const [sportDone, setSportDone] = useState(false);
   const [todayKey, setTodayKey] = useState("");
+  const router = useRouter();
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (u) => {
@@ -55,6 +57,8 @@ export default function DashboardSummary() {
         setMotivation(motivs[Math.floor(Math.random() * motivs.length)]);
         setSuccessRate(Math.floor(Math.random()*30)+70); // Placeholder
         setLoading(false);
+      } else {
+        setLoading(false); // Kullanıcı yoksa da loading'i kapat!
       }
     });
     return () => unsubscribe();
@@ -70,6 +74,11 @@ export default function DashboardSummary() {
     await setDoc(profileRef, { ...snap.data(), doneDays }, { merge: true });
     if (type === "diet") setDietDone(true);
     if (type === "sport") setSportDone(true);
+  }
+
+  if (!user && !loading) {
+    router.replace("/login");
+    return null;
   }
 
   if (loading) return <div className="card" style={{ marginTop: 32 }}>Yükleniyor...</div>;

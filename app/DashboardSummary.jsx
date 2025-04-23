@@ -64,6 +64,12 @@ export default function DashboardSummary() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!user && !loading) {
+      router.replace("/login");
+    }
+  }, [user, loading, router]);
+
   async function handleDone(type) {
     if (!user || !todayKey) return;
     const profileRef = doc(db, "profiles", user.uid);
@@ -77,7 +83,6 @@ export default function DashboardSummary() {
   }
 
   if (!user && !loading) {
-    router.replace("/login");
     return null;
   }
 

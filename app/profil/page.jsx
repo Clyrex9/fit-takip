@@ -74,7 +74,7 @@ export default function ProfilPage() {
     if (!file || !user) return;
     setUploading(true);
     // Firebase Storage'a yükle
-    const storageUrl = `https://api.imgbb.com/1/upload?key=2f4c5e2b2e4e8b7bc3f1d1e2a3c4b5d6`; // örnek imgbb, kendi key'inle değiştir
+    const storageUrl = `https://api.imgbb.com/1/upload?key=4c51f95dedfe63ce71c1892490e38a31`; 
     const formData = new FormData();
     formData.append('image', file);
     const res = await fetch(storageUrl, { method: 'POST', body: formData });

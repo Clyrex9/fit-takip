@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../../lib/firebase";
 import { collection, doc, getDoc, setDoc, getDocs, query, where } from "firebase/firestore";
+import FriendProfileDetail from "./FriendProfileDetail";
 
 export default function FriendList() {
   const [user, setUser] = useState(null);
@@ -13,6 +14,57 @@ export default function FriendList() {
   const [friendProgress, setFriendProgress] = useState({});
   const [error, setError] = useState("");
   const [showProfile, setShowProfile] = useState(null);
+
+  // Arkadaşların displayName'lerini almak için yardımcı fonksiyon
+  async function getDisplayNameByEmail(email) {
+    const q = query(collection(db, "profiles"), where("email", "==", email));
+    const qs = await getDocs(q);
+    if (!qs.empty) {
+      return qs.docs[0].data().displayName || email;
+    }
+    return email;
+  }
+
+  // Arkadaşların displayName'lerini state olarak tut
+  const [friendNames, setFriendNames] = useState({});
+
+  // Arkadaşlar güncellendiğinde displayName'leri çek
+  useEffect(() => {
+    async function fetchNames() {
+      let names = {};
+      for (const email of friends) {
+        names[email] = await getDisplayNameByEmail(email);
+      }
+      setFriendNames(names);
+    }
+    if (friends.length > 0) fetchNames();
+  }, [friends]);
+
+  // Bekleyen istekler için de displayName'leri çek
+  const [pendingNames, setPendingNames] = useState({});
+  useEffect(() => {
+    async function fetchPendingNames() {
+      let names = {};
+      for (const email of pendingRequests) {
+        names[email] = await getDisplayNameByEmail(email);
+      }
+      setPendingNames(names);
+    }
+    if (pendingRequests.length > 0) fetchPendingNames();
+  }, [pendingRequests]);
+
+  // Gelen istekler için de displayName'leri çek
+  const [requestNames, setRequestNames] = useState({});
+  useEffect(() => {
+    async function fetchRequestNames() {
+      let names = {};
+      for (const email of friendRequests) {
+        names[email] = await getDisplayNameByEmail(email);
+      }
+      setRequestNames(names);
+    }
+    if (friendRequests.length > 0) fetchRequestNames();
+  }, [friendRequests]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (u) => {
@@ -41,33 +93,49 @@ export default function FriendList() {
   async function sendFriendRequest() {
     setError("");
     if (!friendInput || !user) return;
-    if (friendInput === user.email || friendInput === user.displayName) {
-      setError("Kendi bilgini ekleyemezsin."); return;
+    if (
+      friendInput === user.email ||
+      friendInput === user.displayName
+    ) {
+      setError("Kendi bilgini ekleyemezsin.");
+      return;
     }
-    // Kullanıcı var mı kontrolü (email veya kullanıcı adı ile)
-    let q;
-    if (searchType === "email" || friendInput.includes("@")) {
-      q = query(collection(db, "profiles"), where("email", "==", friendInput));
-    } else {
-      q = query(collection(db, "profiles"), where("displayName", "==", friendInput));
+    // Kullanıcıyı hem email hem displayName ile ara
+    let qEmail = query(collection(db, "profiles"), where("email", "==", friendInput));
+    let qName = query(collection(db, "profiles"), where("displayName", "==", friendInput));
+    let qsEmail = await getDocs(qEmail);
+    let qsName = await getDocs(qName);
+    let targetDoc = null;
+    if (!qsEmail.empty) {
+      targetDoc = qsEmail.docs[0];
+    } else if (!qsName.empty) {
+      targetDoc = qsName.docs[0];
     }
-    const qs = await getDocs(q);
-    if (qs.empty) { setError("Kullanıcı bulunamadı."); return; }
-    const targetUid = qs.docs[0].id;
-    const targetEmail = qs.docs[0].data().email;
+    if (!targetDoc) {
+      setError("Kullanıcı bulunamadı.");
+      return;
+    }
+    const targetUid = targetDoc.id;
+    const targetEmail = targetDoc.data().email;
     // Zaten arkadaş mı?
     const ref = doc(db, "friends", user.uid);
     const snap = await getDoc(ref);
     let newList = [];
     if (snap.exists()) {
       newList = snap.data().list || [];
-      if (newList.includes(targetEmail)) { setError("Zaten arkadaşsınız."); return; }
+      if (newList.includes(targetEmail)) {
+        setError("Zaten arkadaşsınız.");
+        return;
+      }
     }
     // Zaten istek gönderilmiş mi?
     const pendRef = doc(db, "pendingRequests", user.uid);
     const pendSnap = await getDoc(pendRef);
     let pendList = pendSnap.exists() ? pendSnap.data().list || [] : [];
-    if (pendList.includes(targetEmail)) { setError("Zaten istek gönderdin."); return; }
+    if (pendList.includes(targetEmail)) {
+      setError("Zaten istek gönderdin.");
+      return;
+    }
     pendList.push(targetEmail);
     await setDoc(pendRef, { list: pendList });
     // Hedefin friendRequests'ine ekle
@@ -116,11 +184,11 @@ export default function FriendList() {
   }
 
   async function fetchFriendProgress(email) {
-    // Arkadaşın profilini getir (email ile)
     const q = query(collection(db, "profiles"), where("email", "==", email));
     const qs = await getDocs(q);
     let profile = null;
     if (!qs.empty) profile = qs.docs[0].data();
+    if (profile && qs.docs[0]) profile.uid = qs.docs[0].id;
     setFriendProgress({ ...friendProgress, [email]: { profile } });
   }
 
@@ -142,7 +210,7 @@ export default function FriendList() {
         {friendRequests.length === 0 && <li style={{ color: "#aaa" }}>İstek yok.</li>}
         {friendRequests.map(req => (
           <li key={req} style={{ marginBottom: 8 }}>
-            <span>{req}</span>
+            <span>{requestNames[req] || "Kullanıcı"}</span>
             <button style={{ marginLeft: 8 }} onClick={() => acceptFriendRequest(req)}>Kabul Et</button>
           </li>
         ))}
@@ -152,7 +220,7 @@ export default function FriendList() {
         {pendingRequests.length === 0 && <li style={{ color: "#aaa" }}>Bekleyen istek yok.</li>}
         {pendingRequests.map(req => (
           <li key={req} style={{ marginBottom: 8 }}>
-            <span>{req}</span>
+            <span>{pendingNames[req] || "Kullanıcı"}</span>
           </li>
         ))}
       </ul>
@@ -162,7 +230,7 @@ export default function FriendList() {
         {friends.length === 0 && <li style={{ color: "#aaa" }}>Henüz arkadaşın yok.</li>}
         {friends.map(email => (
           <li key={email} style={{ marginBottom: 8 }}>
-            <span>{email}</span>
+            <span>{friendNames[email] || "Kullanıcı"}</span>
             <button style={{ marginLeft: 8 }} onClick={async () => { await fetchFriendProgress(email); setShowProfile(email); }}>Profili Gör</button>
           </li>
         ))}
@@ -177,13 +245,8 @@ export default function FriendList() {
             <div style={{ fontWeight: 600, fontSize: 22, marginBottom: 6 }}>{friendProgress[showProfile].profile.displayName}</div>
             <div style={{ fontSize: 16, marginBottom: 8 }}>Boy: {friendProgress[showProfile].profile.boy || "-"} cm</div>
             <div style={{ fontSize: 16, marginBottom: 8 }}>Kilo: {friendProgress[showProfile].profile.kilo || "-"} kg</div>
-            {/* Başarı özeti örneği */}
-            <div style={{ fontSize: 15, margin: "12px 0 0 0", color: "#4ade80" }}>Başarı Özeti</div>
-            <div style={{ fontSize: 14, marginBottom: 10 }}>
-              {/* Buraya başarı oranı veya başka bir bilgi eklenebilir */}
-              {friendProgress[showProfile].profile.weightHistory && friendProgress[showProfile].profile.weightHistory.length > 0 ?
-                `Kayıtlı kilo girişi: ${friendProgress[showProfile].profile.weightHistory.length}` : "Henüz veri yok"}
-            </div>
+            {/* Detaylı başarı, programlar ve günler */}
+            <FriendProfileDetail profile={friendProgress[showProfile].profile} />
             <button onClick={() => setShowProfile(null)} style={{ position: "absolute", top: 8, right: 12, background: "#4ade80", color: "#18181b", border: 0, borderRadius: 6, padding: "2px 10px", cursor: "pointer" }}>Kapat</button>
           </div>
         </div>

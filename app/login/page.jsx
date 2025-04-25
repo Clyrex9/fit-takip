@@ -10,6 +10,21 @@ export default function LoginPage() {
       const result = await signInWithPopup(auth, provider);
       // Kullanıcı bilgileri
       const user = result.user;
+      // PROFİLİ FIRESTORE'DA OLUŞTUR/GÜNCELLE
+      if (user) {
+        const { db } = await import("../../lib/firebase");
+        const { doc, getDoc, setDoc } = await import("firebase/firestore");
+        const profileRef = doc(db, "profiles", user.uid);
+        const profileSnap = await getDoc(profileRef);
+        if (!profileSnap.exists()) {
+          await setDoc(profileRef, {
+            email: user.email,
+            displayName: user.displayName,
+            photoURL: user.photoURL || "",
+            // Diğer profil alanları eklenebilir
+          });
+        }
+      }
       alert("Giriş başarılı: " + user.displayName);
       router.replace("/"); // Başarılı girişte ana sayfaya yönlendir
     } catch (error) {
